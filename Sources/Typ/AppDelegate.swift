@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }.store(in: &bag)
 
         setupStatusItem()
-        whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath)
+        whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath, language: settings.speechLanguage)
 
         DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("local.typ.app.showWindow"),

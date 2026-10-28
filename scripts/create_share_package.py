@@ -119,14 +119,14 @@ echo "📦 正在安装推理运行时 (sherpa-onnx, numpy)..."
 
 # 4. 检查/下载语音模型
 mkdir -p "$TARGET_DIR/model"
-if [ ! -f "$TARGET_DIR/model/model.onnx" ]; then
+if [ ! -f "$TARGET_DIR/model/model.int8.onnx" ]; then
     # 检查本地分享包内是否自带了模型缓存
-    if [ -f "$DIR/model_cache/model.onnx" ] && [ -f "$DIR/model_cache/tokens.txt" ]; then
+    if [ -f "$DIR/model_cache/model.int8.onnx" ] && [ -f "$DIR/model_cache/tokens.txt" ]; then
         echo "⚡️ 发现分享包自带离线模型，正在直接拷贝..."
-        cp "$DIR/model_cache/model.onnx" "$TARGET_DIR/model/"
+        cp "$DIR/model_cache/model.int8.onnx" "$TARGET_DIR/model/"
         cp "$DIR/model_cache/tokens.txt" "$TARGET_DIR/model/"
     else
-        echo "🌐 正在从开源仓库下载 SenseVoice 预训练模型 (约 890MB)..."
+        echo "🌐 正在从开源仓库下载 SenseVoice 预训练模型 (下载约 1GB 压缩包，安装后占用约 230MB)..."
         echo "下载地址: GitHub Releases / HuggingFace"
         TMP=$(mktemp -d)
         curl -L --fail -# -o "$TMP/m.tar.bz2" "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$MODEL_NAME.tar.bz2" || \
@@ -134,7 +134,7 @@ if [ ! -f "$TARGET_DIR/model/model.onnx" ]; then
         
         echo "📂 正在解压并就绪模型..."
         tar xjf "$TMP/m.tar.bz2" -C "$TMP"
-        mv "$TMP/$MODEL_NAME/model.onnx" "$TMP/$MODEL_NAME/tokens.txt" "$TARGET_DIR/model/"
+        mv "$TMP/$MODEL_NAME/model.int8.onnx" "$TMP/$MODEL_NAME/tokens.txt" "$TARGET_DIR/model/"
         rm -rf "$TMP"
     fi
 else

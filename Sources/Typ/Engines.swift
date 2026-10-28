@@ -46,14 +46,14 @@ final class WhisperEngine: ObservableObject {
     static let binaryCandidates = ["/opt/homebrew/bin/whisper-server", "/usr/local/bin/whisper-server"]
     static var binaryPath: String? { binaryCandidates.first { FileManager.default.isExecutableFile(atPath: $0) } }
 
-    func start(kind requested: SpeechEngineKind, modelPath: String) {
+    func start(kind requested: SpeechEngineKind, modelPath: String, language: String = "auto") {
         stop()
         killOrphans()
         let kind: SpeechEngineKind = requested == .sensevoice && Self.senseVoiceInstalled && Self.senseVoiceScript != nil ? .sensevoice : .whisper
         self.kind = kind
         if requested == .sensevoice && kind == .whisper { Log.write("SenseVoice not installed, falling back to Whisper") }
         if kind == .sensevoice {
-            launch(Self.senseVoicePython, ["-I", Self.senseVoiceScript!, Self.senseVoiceModel, "\(kind.port)"])
+            launch(Self.senseVoicePython, ["-I", Self.senseVoiceScript!, Self.senseVoiceModel, "\(kind.port)", language])
             return
         }
         guard let bin = Self.binaryPath else {

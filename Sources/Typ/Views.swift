@@ -227,7 +227,7 @@ struct SetupChecklist: View {
                         Permissions.openSettings("Privacy_Accessibility")
                     }
                     CheckRow(ok: engine, title: "本地语音引擎", detail: whisper.status.label, actionTitle: "重启") {
-                        whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath)
+                        whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath, language: settings.speechLanguage)
                     }
                     CheckRow(ok: key, title: "DeepSeek API Key", detail: "用于润色、翻译和随便问", actionTitle: "去填写") {
                         nav.tab = .settings
@@ -521,18 +521,27 @@ struct SettingsView: View {
                 LabeledContent("状态") {
                     HStack {
                         Text(whisper.status.label).foregroundStyle(whisper.status == .ready ? Theme.green : Theme.text2)
-                        Button("重启引擎") { whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath) }.buttonStyle(SoftButtonStyle())
+                        Button("重启引擎") { whisper.start(kind: settings.speechEngine, modelPath: settings.modelPath, language: settings.speechLanguage) }.buttonStyle(SoftButtonStyle())
                     }
                 }
                 Picker("识别引擎", selection: $settings.speechEngine) {
                     ForEach(SpeechEngineKind.allCases) { Text($0.label).tag($0) }
                 }
-                .onChange(of: settings.speechEngine) { _, kind in whisper.start(kind: kind, modelPath: settings.modelPath) }
+                .onChange(of: settings.speechEngine) { _, kind in whisper.start(kind: kind, modelPath: settings.modelPath, language: settings.speechLanguage) }
                 if settings.speechEngine == .sensevoice && !WhisperEngine.senseVoiceInstalled {
                     Text("SenseVoice 未安装，正在使用 Whisper。运行 scripts/setup_sensevoice.sh 安装。").font(.caption).foregroundStyle(.orange)
                 }
                 Picker("说话语言", selection: $settings.speechLanguage) {
                     ForEach(speechLanguages, id: \.code) { Text($0.name).tag($0.code) }
+                }
+                .onChange(of: settings.speechLanguage) { _, lang in
+                    if settings.speechEngine == .sensevoice {
+                        Task.detached(priority: .utility) {
+                            _ = try? await WhisperEngine.transcribe(kind: .sensevoice,
+                                                                    wav: AudioRecorder.wav([Float](repeating: 0, count: 8000)),
+                                                                    language: lang, prompt: "")
+                        }
+                    }
                 }
                 Picker("中文输出", selection: $settings.simplifiedChinese) {
                     Text("简体").tag(true)
