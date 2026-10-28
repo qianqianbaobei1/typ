@@ -355,7 +355,11 @@ final class Controller {
             var output = raw
             switch mode {
             case .dictate:
-                if settings.polishEnabled, let llm {
+                if settings.polishEnabled, settings.skipPolishShort,
+                   let quick = LocalCleanup.shortcut(raw, maxChars: settings.skipPolishMaxChars) {
+                    output = quick
+                    mark("本地整理")
+                } else if settings.polishEnabled, let llm {
                     do {
                         let userPrompt = Prompts.polishUser(raw, pc)
                         Log.write("polish prompt: \(Prompts.polishSystem.count) (sys) + \(userPrompt.count) (user) chars")
@@ -369,8 +373,8 @@ final class Controller {
                         bar.flash("润色超时，已插入识别原文", seconds: 2)
                         Log.write("polish failed, inserted raw: \(error.localizedDescription)")
                     }
+                    mark("润色")
                 }
-                if settings.polishEnabled && llm != nil { mark("润色") }
                 output = await insert(output, ctx: ctx)
 
             case .translate:

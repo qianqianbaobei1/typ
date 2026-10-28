@@ -543,6 +543,9 @@ struct SettingsView: View {
 
             Section("AI 润色（DeepSeek）") {
                 Toggle("听写时自动润色", isOn: $settings.polishEnabled)
+                if settings.polishEnabled {
+                    Toggle("短句跳过大模型（本地秒级整理）", isOn: $settings.skipPolishShort)
+                }
                 SecureField("API Key", text: $settings.apiKey, prompt: Text("sk-..."))
                 TextField("接口地址", text: $settings.apiBaseURL)
                 TextField("模型", text: $settings.apiModel)

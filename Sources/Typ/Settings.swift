@@ -105,6 +105,8 @@ final class Settings: ObservableObject {
     @Published var speechEngine: SpeechEngineKind { didSet { d.set(speechEngine.rawValue, forKey: "speechEngine") } }
 
     @Published var polishEnabled: Bool { didSet { d.set(polishEnabled, forKey: "polishEnabled") } }
+    @Published var skipPolishShort: Bool { didSet { d.set(skipPolishShort, forKey: "skipPolishShort") } }
+    @Published var skipPolishMaxChars: Int { didSet { d.set(skipPolishMaxChars, forKey: "skipPolishMaxChars") } }
     @Published var apiBaseURL: String { didSet { d.set(apiBaseURL, forKey: "apiBaseURL") } }
     @Published var apiModel: String { didSet { d.set(apiModel, forKey: "apiModel") } }
     @Published var apiKey: String { didSet { Self.writeKey(apiKey) } }
@@ -155,6 +157,8 @@ final class Settings: ObservableObject {
         modelPath = d.string(forKey: "modelPath") ?? Paths.defaultModel
         speechEngine = SpeechEngineKind(rawValue: d.string(forKey: "speechEngine") ?? "") ?? .sensevoice
         polishEnabled = bool("polishEnabled", true)
+        skipPolishShort = bool("skipPolishShort", true)
+        skipPolishMaxChars = d.object(forKey: "skipPolishMaxChars") == nil ? 20 : d.integer(forKey: "skipPolishMaxChars")
         apiBaseURL = d.string(forKey: "apiBaseURL") ?? "https://api.deepseek.com"
         apiModel = d.string(forKey: "apiModel") ?? "deepseek-chat"
         apiKey = Self.readKey()
