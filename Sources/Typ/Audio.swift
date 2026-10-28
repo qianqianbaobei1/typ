@@ -77,7 +77,6 @@ final class AudioRecorder {
         ) { [weak self] _ in
             self?.resetEngine()
         }
-        engine.prepare()
     }
 
     deinit {
@@ -94,12 +93,16 @@ final class AudioRecorder {
             isRecording = false
         }
         engine = AVAudioEngine()
-        engine.prepare()
         currentDeviceUID = nil
         converter = nil
     }
 
     func start(deviceUID: String) throws {
+        // Without the microphone grant `inputNode` is nil and any engine call raises an
+        // Obj-C exception, which Swift can't catch and which kills app launch.
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            throw TypError.message("请在系统设置中允许 Typ 使用麦克风")
+        }
         lock.lock()
         samples.removeAll(keepingCapacity: true)
         startTime = Date()
