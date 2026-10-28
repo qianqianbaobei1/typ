@@ -1,5 +1,5 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Carbon
 
 /// After Typ inserts text, keeps reading that field (every 0.7 s for 90 s) and remembers the latest version
@@ -40,6 +40,9 @@ final class EditWatcher {
     private let duration = 90.0
     private let maxTracked = 6
 
+    private let axQueue = DispatchQueue(label: "typ.editwatcher.ax", qos: .utility)
+    private var polling = false
+
     func watch(element: AXUIElement?, pid: pid_t, inserted: String, app: String, allowRead: Bool = true) {
         guard allowRead else { return }
         // Passages in another app can't be edited alongside this one: settle them now.
@@ -61,6 +64,7 @@ final class EditWatcher {
 
     private func registerField(resolved: AXUIElement?, inserted: String, app: String, pid: pid_t) {
         if let resolved {
+            AXUIElementSetMessagingTimeout(resolved, 0.15)
             pendings.append(Pending(element: resolved, inserted: inserted, app: app, pid: pid))
             if pendings.count > maxTracked { finalize(pendings.removeFirst(), reason: "too many") }
             Log.write("learn: watching field in \(app) (\(pendings.count) passage(s))")
@@ -96,9 +100,28 @@ final class EditWatcher {
 
     private func poll() {
         expire()
+        guard !polling, !pendings.isEmpty else { return }
+        polling = true
+        let elements = pendings.map { $0.element }
+        axQueue.async { [weak self] in
+            let values = elements.map { AX.string($0, kAXValueAttribute) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.polling = false
+                    self?.apply(values: values, for: elements)
+                }
+            }
+        }
+    }
+
+    private func apply(values: [String?], for elements: [AXUIElement]) {
         var keep: [Pending] = []
         for var p in pendings {
-            guard let value = AX.string(p.element, kAXValueAttribute) else {
+            guard let idx = elements.firstIndex(where: { CFEqual($0, p.element) }) else {
+                keep.append(p)
+                continue
+            }
+            guard let value = values[idx] else {
                 // Some apps drop out of Accessibility now and then; give it a few tries before falling back.
                 p.misses += 1
                 if p.misses < 4 { keep.append(p); continue }
