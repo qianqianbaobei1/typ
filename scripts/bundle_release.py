@@ -4,7 +4,7 @@ import sys
 import shutil
 import subprocess
 
-PROJECT_DIR = "/Users/qianqianawodebaobei/PycharmProjects/Typ"
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD_DIR = os.path.join(PROJECT_DIR, "build")
 APP_DIR = os.path.join(BUILD_DIR, "Typ.app")
 

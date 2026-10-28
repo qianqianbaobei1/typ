@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import zipfile
 
-PROJECT_DIR = "/Users/qianqianawodebaobei/PycharmProjects/Typ"
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DELIVERY_DIR = os.path.join(PROJECT_DIR, "deliveries", "Typ-语音输入转译-分享包")
 DESKTOP_DIR = "/Users/qianqianawodebaobei/Desktop/Typ-语音输入转译-分享包"
 BUILD_APP = os.path.join(PROJECT_DIR, "build", "Typ.app")
