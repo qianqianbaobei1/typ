@@ -241,6 +241,10 @@ final class Controller {
         return parts.joined(separator: " ")
     }
 
+    private static func looksJapaneseOrKorean(_ s: String) -> Bool {
+        s.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) }
+    }
+
     /// Whisper emits ASCII punctuation after Chinese text; switch it to full-width there.
     static func fullWidthPunctuation(_ s: String) -> String {
         let map: [Character: Character] = [",": "，", "?": "？", "!": "！", ":": "：", ";": "；"]
@@ -277,7 +281,8 @@ final class Controller {
         }
         // Keep English words apart when continuing a sentence.
         if let last = ctx?.textBefore?.last, !last.isWhitespace, let first = plain.first,
-           first.isASCII && first.isLetter || first.isNumber, last.isASCII && (last.isLetter || last.isNumber || ".,!?;:".contains(last)) {
+           first.isASCII && (first.isLetter || first.isNumber),
+           last.isASCII && (last.isLetter || last.isNumber || ".,!?;:".contains(last)) {
             plain = " " + plain
         }
         await TextInserter.insert(plain: plain, html: html, context: ctx, preserveClipboard: settings.preserveClipboard)
@@ -336,7 +341,10 @@ final class Controller {
             }
             mark(stream.map { $0.segments > 1 ? "识别(分\($0.segments)段)" : "识别" } ?? "识别")
             if let basic { ctx = await Self.value(of: ctxTask, within: 0.15, fallback: basic) }
-            if settings.simplifiedChinese, let s = raw.applyingTransform(StringTransform("Hant-Hans"), reverse: false) { raw = s }
+            if settings.simplifiedChinese, !Self.looksJapaneseOrKorean(raw),
+               let s = raw.applyingTransform(StringTransform("Hant-Hans"), reverse: false) {
+                raw = s
+            }
             raw = Self.fullWidthPunctuation(raw)
             guard !raw.isEmpty else {
                 bar.flash("没有识别到内容")
