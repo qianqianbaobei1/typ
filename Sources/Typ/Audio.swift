@@ -58,41 +58,96 @@ final class AudioRecorder {
     static let sampleRate: Double = 16000
     var onLevel: ((Float) -> Void)?
 
-    private var engine: AVAudioEngine?
+    private var engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
     private var samples: [Float] = []
     private let lock = NSLock()
+    private var currentDeviceUID: String?
+    private var isRecording = false
+    private var startTime: Date?
+    private var loggedFirstBuffer = false
+    private var configObserver: NSObjectProtocol?
+
+    init() {
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            self?.resetEngine()
+        }
+        engine.prepare()
+    }
+
+    deinit {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        engine.stop()
+    }
+
+    private func resetEngine() {
+        lock.lock()
+        defer { lock.unlock() }
+        if isRecording {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            isRecording = false
+        }
+        engine = AVAudioEngine()
+        engine.prepare()
+        currentDeviceUID = nil
+        converter = nil
+    }
 
     func start(deviceUID: String) throws {
-        let engine = AVAudioEngine()
+        lock.lock()
+        samples.removeAll(keepingCapacity: true)
+        startTime = Date()
+        loggedFirstBuffer = false
+        lock.unlock()
+
         let input = engine.inputNode
-        if !deviceUID.isEmpty,
-           let dev = AudioDevices.inputDevices().first(where: { $0.uid == deviceUID }),
-           let unit = input.audioUnit {
-            var id = dev.id
-            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                                 &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+        if currentDeviceUID != deviceUID {
+            if !deviceUID.isEmpty,
+               let dev = AudioDevices.inputDevices().first(where: { $0.uid == deviceUID }),
+               let unit = input.audioUnit {
+                var id = dev.id
+                AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                     &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+            }
+            currentDeviceUID = deviceUID
+            converter = nil
         }
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw TypError.message("没有可用的麦克风") }
-        guard let conv = AVAudioConverter(from: format, to: target) else { throw TypError.message("无法初始化音频转换") }
-        converter = conv
-        lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock()
+        if converter == nil {
+            guard let conv = AVAudioConverter(from: format, to: target) else { throw TypError.message("无法初始化音频转换") }
+            converter = conv
+        }
+        input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.consume(buffer)
         }
-        engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            input.removeTap(onBus: 0)
-            throw TypError.message("麦克风启动失败：\(error.localizedDescription)")
+        if !engine.isRunning {
+            engine.prepare()
+            do {
+                try engine.start()
+            } catch {
+                input.removeTap(onBus: 0)
+                throw TypError.message("麦克风启动失败：\(error.localizedDescription)")
+            }
         }
-        self.engine = engine
+        isRecording = true
     }
 
     private func consume(_ buffer: AVAudioPCMBuffer) {
+        if !loggedFirstBuffer {
+            loggedFirstBuffer = true
+            if let st = startTime {
+                let ms = Int(Date().timeIntervalSince(st) * 1000)
+                Log.write("audio: first buffer arrived in \(ms)ms")
+            }
+        }
         guard let converter else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * target.sampleRate / buffer.format.sampleRate) + 64
         guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
@@ -125,12 +180,11 @@ final class AudioRecorder {
     }
 
     func stop() -> [Float] {
-        if let engine {
+        if isRecording {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
+            isRecording = false
         }
-        engine = nil
-        converter = nil
         lock.lock(); defer { lock.unlock() }
         return samples
     }
