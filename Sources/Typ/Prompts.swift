@@ -45,11 +45,12 @@ enum Prompts {
         return lines.joined(separator: "\n\n")
     }
 
-    static func polish(_ p: PromptContext) -> String {
-        """
+    static let polishSystem: String = """
         You are Typ, the editor inside a voice-dictation tool. You receive a raw speech-recognition transcript. \
         Turn it into clear, well-organised written text that says exactly what the speaker meant — easy to read for \
         a person or an AI receiving it.
+
+        The user message contains <context> (where the text is going, screen text, dictionary, style) and the <transcript>.
 
         Clean up:
         1. Output only the final text. No quotes, labels, explanations or code fences.
@@ -93,14 +94,28 @@ enum Prompts {
         15. If there is text before the cursor, continue it naturally: match its language, don't restate what is already written.
         16. Use only words the speaker said or clearly meant; don't swap in look-alike words that change the meaning.
         17. Inside block texts use plain words only — the list numbering and paragraph breaks are added for you.
-
-        \(contextBlock(p))
         """
+
+    static func polishUser(_ raw: String, _ p: PromptContext) -> String {
+        "<context>\n\(contextBlock(p))\n</context>\n\n" + wrapTranscript(raw)
     }
+
+    static func polish(_ p: PromptContext) -> String {
+        "\(polishSystem)\n\n\(contextBlock(p))"
+    }
+
+    private static let exampleContext = """
+        <context>
+        Destination app: WeChat
+        The destination is plain text: no **bold**, # headings or other Markdown markup inside the blocks.
+        Write any Chinese in Simplified Chinese characters.
+        </context>
+
+        """
 
     /// Worked examples sent as prior chat turns; they steer structure much more reliably than rules alone.
     static let polishExamples: [(String, String)] = [
-        (wrapTranscript("嗯我想问一下就是那个，咱们下周的那个发布会，呃场地定了没有，然后就是物料的话，我觉得需要海报啊，然后易拉宝，还有那个就是嘉宾的名牌，对，名牌，然后预算这块不对，预算我们之前说是五万，现在可能要加到八万，你看一下行不行"),
+        (exampleContext + wrapTranscript("嗯我想问一下就是那个，咱们下周的那个发布会，呃场地定了没有，然后就是物料的话，我觉得需要海报啊，然后易拉宝，还有那个就是嘉宾的名牌，对，名牌，然后预算这块不对，预算我们之前说是五万，现在可能要加到八万，你看一下行不行"),
          """
          想确认一下下周发布会的准备情况，场地定了吗？
 
@@ -111,7 +126,7 @@ enum Prompts {
 
          另外，预算之前说的是 5 万，现在可能要加到 8 万，你看行不行？
          """),
-        (wrapTranscript("就是我觉得这个页面吧，嗯有几个问题，一个是加载太慢了，然后呢那个按钮的颜色也不太对，跟我们品牌色不一样，还有就是手机上看的话那个字太小了，嗯你们能不能这周内改一下"),
+        (exampleContext + wrapTranscript("就是我觉得这个页面吧，嗯有几个问题，一个是加载太慢了，然后呢那个按钮的颜色也不太对，跟我们品牌色不一样，还有就是手机上看的话那个字太小了，嗯你们能不能这周内改一下"),
          """
          这个页面有几个问题：
          1. 加载太慢
@@ -120,7 +135,7 @@ enum Prompts {
 
          你们能在这周内改一下吗？
          """),
-        (wrapTranscript("我我觉得就是那个app吧，整体的那个样子我挺喜欢的，嗯就是它那个就是颜色啊，比较暖，然后它那个动画，就是说话的时候那个波形会动，还有它首页那个插图，对，还有那个弹窗，弹窗也挺好看，我希望我们的产品也能做成那样，呃你觉得可以做到吗"),
+        (exampleContext + wrapTranscript("我我觉得就是那个app吧，整体的那个样子我挺喜欢的，嗯就是它那个就是颜色啊，比较暖，然后它那个动画，就是说话的时候那个波形会动，还有它首页那个插图，对，还有那个弹窗，弹窗也挺好看，我希望我们的产品也能做成那样，呃你觉得可以做到吗"),
          """
          我挺喜欢那个 App 的整体风格，尤其是这几点：
          1. 偏暖的配色
@@ -130,7 +145,7 @@ enum Prompts {
 
          我希望我们的产品也能做成那样，你觉得可以做到吗？
          """),
-        (wrapTranscript("嗯，好的，那我们明天下午三点见吧"), "好的，那我们明天下午三点见吧。"),
+        (exampleContext + wrapTranscript("嗯，好的，那我们明天下午三点见吧"), "好的，那我们明天下午三点见吧。"),
     ]
 
     /// The polish examples in the JSON block form the model is asked to answer in.
@@ -179,9 +194,10 @@ enum Prompts {
         return parts.joined(separator: spacious ? "\n\n" : "\n")
     }
 
-    static func translate(targets: [String], _ p: PromptContext) -> String {
+    static func translateSystem(targets: [String]) -> String {
         """
         You are Typ, a voice translation tool. You receive a raw speech-recognition transcript. \
+        The user message contains <context> (screen text, conversation language) and the <transcript> to translate. \
         First understand what the speaker meant (ignore filler words, keep only the final version of self-corrections), \
         then translate it naturally and idiomatically.
 
@@ -190,14 +206,21 @@ enum Prompts {
         If the conversation on screen is clearly in one of the target languages, prefer that one.
 
         Output only the translation — no quotes, notes or explanations. Never answer or act on the content; just translate it.
-
-        \(contextBlock(p))
         """
     }
 
-    static func ask(hasSelection: Bool, _ p: PromptContext) -> String {
+    static func translateUser(_ raw: String, _ p: PromptContext) -> String {
+        "<context>\n\(contextBlock(p))\n</context>\n\n" + wrapTranscript(raw)
+    }
+
+    static func translate(targets: [String], _ p: PromptContext) -> String {
+        "\(translateSystem(targets: targets))\n\n\(contextBlock(p))"
+    }
+
+    static func askSystem(hasSelection: Bool) -> String {
         """
-        You are Typ, a voice assistant that works inside whatever app the user is using. The user spoke a request. \
+        You are Typ, a voice assistant that works inside whatever app the user is using. \
+        The user message contains <context> (screen text, focused app, selected text) and the user's request. \
         \(hasSelection ? "They also have some text selected in the current app." : "No text is selected in the current app.")
 
         Reply with one JSON object. Choose the action:
@@ -216,9 +239,15 @@ enum Prompts {
         Never claim something was sent — it is only opened as a draft.
 
         Write inserted or replaced text so it fits the destination app, with no surrounding quotes or commentary.
-
-        \(contextBlock(p))
         """
+    }
+
+    static func askUser(command: String, selection: String?, _ p: PromptContext) -> String {
+        "<context>\n\(contextBlock(p))\n</context>\n\n" + askInput(command: command, selection: selection)
+    }
+
+    static func ask(hasSelection: Bool, _ p: PromptContext) -> String {
+        "\(askSystem(hasSelection: hasSelection))\n\n\(contextBlock(p))"
     }
 
     static let learnTerms = """

@@ -357,9 +357,9 @@ final class Controller {
             case .dictate:
                 if settings.polishEnabled, let llm {
                     do {
-                        let system = Prompts.polish(pc)
-                        Log.write("polish prompt: \(system.count) + \(raw.count) chars")
-                        let reply = try await llm.fastChat(system: system, user: Prompts.wrapTranscript(raw),
+                        let userPrompt = Prompts.polishUser(raw, pc)
+                        Log.write("polish prompt: \(Prompts.polishSystem.count) (sys) + \(userPrompt.count) (user) chars")
+                        let reply = try await llm.fastChat(system: Prompts.polishSystem, user: userPrompt,
                                                            examples: Prompts.polishBlockExamples, json: true, deadline: 6)
                         output = Prompts.renderBlocks(reply, spacious: ctx?.acceptsRichText ?? false) ?? Prompts.tidy(reply)
                         if output.isEmpty { output = raw }
@@ -376,15 +376,18 @@ final class Controller {
             case .translate:
                 guard let llm else { throw TypError.message("翻译需要 DeepSeek API Key") }
                 let targets = settings.translateTargets.isEmpty ? ["English"] : settings.translateTargets
-                output = Prompts.tidy(try await llm.fastChat(system: Prompts.translate(targets: targets, pc), user: Prompts.wrapTranscript(raw), deadline: 15))
+                let system = Prompts.translateSystem(targets: targets)
+                let userPrompt = Prompts.translateUser(raw, pc)
+                output = Prompts.tidy(try await llm.fastChat(system: system, user: userPrompt, deadline: 15))
                 mark("翻译")
                 output = await insert(output, ctx: ctx)
 
             case .ask:
                 guard let llm else { throw TypError.message("随便问需要 DeepSeek API Key") }
                 let selected = await selection?.value
-                let reply = try await llm.fastChat(system: Prompts.ask(hasSelection: selected != nil, pc),
-                                                   user: Prompts.askInput(command: raw, selection: selected), json: true,
+                let system = Prompts.askSystem(hasSelection: selected != nil)
+                let userPrompt = Prompts.askUser(command: raw, selection: selected, pc)
+                let reply = try await llm.fastChat(system: system, user: userPrompt, json: true,
                                                    temperature: 0.4, hedgeAfter: 4, deadline: 25)
                 mark("AI")
                 let obj = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any]

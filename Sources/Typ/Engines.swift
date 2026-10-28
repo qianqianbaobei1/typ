@@ -210,8 +210,16 @@ struct LLMClient: Sendable {
         if json { body["response_format"] = ["type": "json_object"] }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        let start = Date()
         let (data, resp) = try await URLSession.shared.data(for: req)
+        let elapsed = String(format: "%.2f", Date().timeIntervalSince(start))
         let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if let usage = obj?["usage"] as? [String: Any] {
+            let p = usage["prompt_tokens"] as? Int ?? 0
+            let h = usage["prompt_cache_hit_tokens"] as? Int ?? 0
+            let c = usage["completion_tokens"] as? Int ?? 0
+            Log.write("LLM usage: prompt \(p) (cache hit \(h)), completion \(c), \(elapsed)s")
+        }
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             let msg = ((obj?["error"] as? [String: Any])?["message"] as? String) ?? String(data: data, encoding: .utf8) ?? ""
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
