@@ -14,6 +14,8 @@ struct AppContext {
     /// Other text on screen in the focused window, used for spelling names and terms.
     var visibleText: String?
     var isSecureField = false
+    /// The app or page is on the privacy blacklist: don't read its text (insertion still works normally).
+    var isPrivate = false
     var element: AXUIElement?
 
     private static let richApps: Set<String> = [
@@ -124,7 +126,7 @@ enum ContextReader {
 
         // Privacy guard: if targeting a blacklisted sensitive app, refuse to capture text
         if isBlacklisted(bundleID: ctx.bundleID, url: ctx.url) {
-            ctx.isSecureField = true
+            ctx.isPrivate = true
             return ctx
         }
 

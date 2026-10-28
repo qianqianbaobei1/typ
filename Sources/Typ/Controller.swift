@@ -279,7 +279,11 @@ final class Controller {
         await TextInserter.insert(plain: plain, html: html, context: ctx, preserveClipboard: settings.preserveClipboard)
         if settings.autoLearn || settings.personalization {
             editWatcher.copyBeforeSend = settings.copyBeforeSend
-            editWatcher.watch(element: ctx?.element, pid: ctx?.pid ?? 0, inserted: plain.trimmingCharacters(in: .whitespaces), app: ctx?.appName ?? "?")
+            editWatcher.watch(element: ctx?.isPrivate == true ? nil : ctx?.element,
+                              pid: ctx?.pid ?? 0,
+                              inserted: plain.trimmingCharacters(in: .whitespaces),
+                              app: ctx?.appName ?? "?",
+                              allowRead: ctx?.isPrivate != true)
         }
         return plain
     }

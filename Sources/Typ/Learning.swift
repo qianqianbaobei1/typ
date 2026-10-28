@@ -40,7 +40,8 @@ final class EditWatcher {
     private let duration = 90.0
     private let maxTracked = 6
 
-    func watch(element: AXUIElement?, pid: pid_t, inserted: String, app: String) {
+    func watch(element: AXUIElement?, pid: pid_t, inserted: String, app: String, allowRead: Bool = true) {
+        guard allowRead else { return }
         // Passages in another app can't be edited alongside this one: settle them now.
         settle(where: { $0 != pid }, reason: "switched app")
         guard inserted.count >= 2 else { return }
