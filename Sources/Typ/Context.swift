@@ -120,12 +120,12 @@ enum ContextReader {
     }
 
     /// Slower Accessibility reads; run off the main thread while the user is speaking.
-    static func enrich(_ base: AppContext, deep: Bool) -> AppContext {
+    static func enrich(_ base: AppContext, deep: Bool, privacy: Bool = true, bottomUpWeb: Bool = true) -> AppContext {
         var ctx = base
         guard ctx.pid != 0 else { return ctx }
 
         // Privacy guard: if targeting a blacklisted sensitive app, refuse to capture text
-        if isBlacklisted(bundleID: ctx.bundleID, url: ctx.url) {
+        if privacy && isBlacklisted(bundleID: ctx.bundleID, url: ctx.url) {
             ctx.isPrivate = true
             return ctx
         }
@@ -149,7 +149,26 @@ enum ContextReader {
             let role = AX.string(el, kAXRoleAttribute) ?? ""
             let subrole = AX.string(el, kAXSubroleAttribute) ?? ""
             ctx.isSecureField = role == "AXSecureTextField" || subrole == "AXSecureTextField"
-            if deep && !ctx.isSecureField, let value = AX.string(el, kAXValueAttribute), !value.isEmpty {
+
+            // Bottom-up traversal first: locate current tab's URL and title accurately
+            if bottomUpWeb {
+                let webInfo = findWebInfoByTraversingUp(from: el)
+                if let u = webInfo.url {
+                    ctx.url = u
+                    if let t = webInfo.title, !t.isEmpty { ctx.windowTitle = t }
+                }
+            }
+        }
+
+        // Re-check blacklist once the web URL has been resolved from the focused element
+        if privacy && isBlacklisted(bundleID: ctx.bundleID, url: ctx.url) {
+            ctx.isPrivate = true
+            return ctx
+        }
+
+        // Read field value only after confirming it is not private/blacklisted
+        if let el = ctx.element, deep && !ctx.isSecureField {
+            if let value = AX.string(el, kAXValueAttribute), !value.isEmpty {
                 let ns = value as NSString
                 var range = CFRange(location: ns.length, length: 0)
                 if let r = AX.range(el, kAXSelectedTextRangeAttribute), r.location != kCFNotFound,
@@ -161,13 +180,6 @@ enum ContextReader {
                 ctx.textBefore = before.isEmpty ? nil : String(before.suffix(1200))
                 ctx.textAfter = after.isEmpty ? nil : String(after.prefix(400))
             }
-
-            // Bottom-up traversal first: locate current tab's URL and title accurately
-            let webInfo = findWebInfoByTraversingUp(from: el)
-            if let u = webInfo.url {
-                ctx.url = u
-                if let t = webInfo.title, !t.isEmpty { ctx.windowTitle = t }
-            }
         }
 
         if let window, !ctx.isSecureField {
@@ -178,6 +190,13 @@ enum ContextReader {
             if deep {
                 let text = scan.texts.joined(separator: "\n")
                 ctx.visibleText = text.isEmpty ? nil : text
+            }
+            // If the URL was only discovered during window scan, ensure blacklist is respected
+            if privacy && isBlacklisted(bundleID: ctx.bundleID, url: ctx.url) {
+                ctx.isPrivate = true
+                ctx.visibleText = nil
+                ctx.textBefore = nil
+                ctx.textAfter = nil
             }
         }
         return ctx

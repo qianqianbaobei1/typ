@@ -120,7 +120,11 @@ final class Controller {
         let basic = ContextReader.basic()
         context = basic
         let deep = settings.deepContext
-        contextTask = Task.detached(priority: .userInitiated) { ContextReader.enrich(basic, deep: deep) }
+        let privacy = settings.privacyProtection
+        let bottomUpWeb = settings.bottomUpWebContext
+        contextTask = Task.detached(priority: .userInitiated) {
+            ContextReader.enrich(basic, deep: deep, privacy: privacy, bottomUpWeb: bottomUpWeb)
+        }
         do {
             try recorder.start(deviceUID: settings.micUID)
         } catch {
