@@ -237,7 +237,11 @@ final class Controller {
         if settings.speechLanguage == "zh" || settings.speechLanguage == "auto" {
             parts.append(settings.simplifiedChinese ? "以下是普通话的句子，使用简体中文和标点。" : "以下是普通話的句子，使用繁體中文和標點。")
         }
-        if !settings.dictionary.isEmpty { parts.append(settings.dictionary.joined(separator: ", ")) }
+        let relDict = Prompts.relevantDictionary(settings.dictionary, raw: "", screen: context?.visibleText, limit: 30)
+        if !relDict.isEmpty {
+            let dictText = relDict.joined(separator: ", ")
+            parts.append(String(dictText.prefix(200)))
+        }
         return parts.joined(separator: " ")
     }
 
@@ -261,9 +265,11 @@ final class Controller {
     }
 
 
-    private func promptContext(_ ctx: AppContext?, rich: Bool) -> PromptContext {
-        PromptContext(
-            app: ctx, dictionary: settings.dictionary, simplified: settings.simplifiedChinese,
+    private func promptContext(_ ctx: AppContext?, rich: Bool, raw: String = "") -> PromptContext {
+        let relDict = Prompts.relevantDictionary(settings.dictionary, raw: raw, screen: ctx?.visibleText, limit: 80)
+        return PromptContext(
+            app: ctx, dictionary: relDict, replacements: settings.replacements,
+            simplified: settings.simplifiedChinese,
             style: settings.personalization ? style.profile : "",
             examples: settings.personalization ? style.examples : [],
             rich: rich)
@@ -346,11 +352,14 @@ final class Controller {
                 raw = s
             }
             raw = Self.fullWidthPunctuation(raw)
+            for (wrong, right) in settings.replacements.sorted(by: { $0.key.count > $1.key.count }) where raw.contains(wrong) {
+                raw = raw.replacingOccurrences(of: wrong, with: right)
+            }
             guard !raw.isEmpty else {
                 bar.flash("没有识别到内容")
                 return
             }
-            let pc = promptContext(ctx, rich: useRich(ctx))
+            let pc = promptContext(ctx, rich: useRich(ctx), raw: raw)
 
             var output = raw
             switch mode {
@@ -451,20 +460,46 @@ final class Controller {
                 Log.write("learn: term extraction failed: \(error.localizedDescription)")
                 return
             }
-            guard let obj = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any],
-                  let terms = obj["terms"] as? [String] else {
+            guard let obj = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any] else {
                 Log.write("learn: unexpected reply: \(reply.prefix(120))")
                 return
             }
-            let known = Set(settings.dictionary.map { $0.lowercased() })
-            // Only words that were actually fixed: present after the edit, absent from what Typ wrote.
-            let fresh = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { (2...40).contains($0.count) && !known.contains($0.lowercased()) && edited.contains($0) && !inserted.contains($0) }
-            Log.write("learn: model suggested \(terms), new: \(fresh)")
-            guard !fresh.isEmpty else { return }
-            settings.dictionary.insert(contentsOf: fresh, at: 0)
-            settings.autoLearned.append(contentsOf: fresh)
-            if state == .idle { bar.flash("已学习：\(fresh.joined(separator: "、"))", seconds: 2) }
+            if let termObjs = obj["terms"] as? [[String: Any]] {
+                var fresh: [String] = []
+                var newReps: [String: String] = [:]
+                let knownDict = Set(settings.dictionary.map { $0.lowercased() })
+                for item in termObjs {
+                    guard let wrong = (item["wrong"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          let right = (item["right"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          inserted.contains(wrong),
+                          edited.contains(right),
+                          !inserted.contains(right),
+                          wrong.count >= 2,
+                          wrong != right else { continue }
+                    if !knownDict.contains(right.lowercased()) && !fresh.contains(right) {
+                        fresh.append(right)
+                    }
+                    newReps[wrong] = right
+                }
+                if !newReps.isEmpty {
+                    for (w, r) in newReps { settings.replacements[w] = r }
+                    Log.write("learn: model learned replacements: \(newReps)")
+                }
+                if !fresh.isEmpty {
+                    settings.dictionary.insert(contentsOf: fresh, at: 0)
+                    settings.autoLearned.append(contentsOf: fresh)
+                    if state == .idle { bar.flash("已学习：\(fresh.joined(separator: "、"))", seconds: 2) }
+                }
+            } else if let terms = obj["terms"] as? [String] {
+                let known = Set(settings.dictionary.map { $0.lowercased() })
+                let fresh = terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { (2...40).contains($0.count) && !known.contains($0.lowercased()) && edited.contains($0) && !inserted.contains($0) }
+                Log.write("learn: model suggested \(terms), new: \(fresh)")
+                guard !fresh.isEmpty else { return }
+                settings.dictionary.insert(contentsOf: fresh, at: 0)
+                settings.autoLearned.append(contentsOf: fresh)
+                if state == .idle { bar.flash("已学习：\(fresh.joined(separator: "、"))", seconds: 2) }
+            }
         }
     }
 }

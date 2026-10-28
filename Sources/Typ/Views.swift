@@ -410,15 +410,48 @@ struct DictionaryView: View {
                     .buttonStyle(ClayButtonStyle())
                     .disabled(newWord.value.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            if settings.dictionary.isEmpty {
+            if settings.dictionary.isEmpty && settings.replacements.isEmpty {
                 EmptyState(symbol: "character.book.closed", title: "还没有词语", text: "加几个你常说的专有名词吧。")
             } else {
                 ScrollView {
-                    FlowLayout(spacing: 8) {
-                        ForEach(settings.dictionary, id: \.self) { word in
-                            WordChip(word: word, auto: settings.autoLearned.contains(word)) {
-                                settings.dictionary.removeAll { $0 == word }
-                                settings.autoLearned.removeAll { $0 == word }
+                    VStack(alignment: .leading, spacing: 18) {
+                        if !settings.replacements.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("自动纠错对照（听错 → 正确）").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+                                FlowLayout(spacing: 8) {
+                                    ForEach(settings.replacements.keys.sorted(), id: \.self) { wrong in
+                                        if let right = settings.replacements[wrong] {
+                                            HStack(spacing: 6) {
+                                                Text("\(wrong) → \(right)").font(.system(size: 13)).foregroundStyle(Theme.text)
+                                                Button {
+                                                    settings.replacements.removeValue(forKey: wrong)
+                                                } label: {
+                                                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.text3)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                            .padding(.horizontal, 11).padding(.vertical, 6)
+                                            .background(Capsule().fill(Theme.card))
+                                            .overlay(Capsule().strokeBorder(Theme.border))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if !settings.dictionary.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if !settings.replacements.isEmpty {
+                                    Text("词典列表").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+                                }
+                                FlowLayout(spacing: 8) {
+                                    ForEach(settings.dictionary, id: \.self) { word in
+                                        WordChip(word: word, auto: settings.autoLearned.contains(word)) {
+                                            settings.dictionary.removeAll { $0 == word }
+                                            settings.autoLearned.removeAll { $0 == word }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

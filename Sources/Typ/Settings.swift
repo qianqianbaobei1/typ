@@ -121,6 +121,8 @@ final class Settings: ObservableObject {
     @Published var dictionary: [String] { didSet { d.set(dictionary, forKey: "dictionary") } }
     /// Dictionary entries Typ added by itself from the user's corrections.
     @Published var autoLearned: [String] { didSet { d.set(autoLearned, forKey: "autoLearned") } }
+    /// Learned speech-recognition fixes: what the engine heard -> what the user meant.
+    @Published var replacements: [String: String] { didSet { d.set(replacements, forKey: "replacements") } }
 
     @Published var autoLearn: Bool { didSet { d.set(autoLearn, forKey: "autoLearn") } }
     @Published var personalization: Bool { didSet { d.set(personalization, forKey: "personalization") } }
@@ -169,6 +171,7 @@ final class Settings: ObservableObject {
         showInDock = bool("showInDock", true)
         dictionary = d.stringArray(forKey: "dictionary") ?? []
         autoLearned = d.stringArray(forKey: "autoLearned") ?? []
+        replacements = (d.dictionary(forKey: "replacements") as? [String: String]) ?? [:]
         autoLearn = bool("autoLearn", true)
         personalization = bool("personalization", true)
         deepContext = bool("deepContext", true)

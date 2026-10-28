@@ -4,6 +4,7 @@ import Foundation
 struct PromptContext {
     var app: AppContext?
     var dictionary: [String]
+    var replacements: [String: String] = [:]
     var simplified: Bool
     var style: String = ""
     var examples: [EditExample] = []
@@ -28,8 +29,14 @@ enum Prompts {
                 lines.append("Other text visible on screen — use it only to get names, terms and the conversation's language/register right, never copy it:\n<screen>\(visible.prefix(2000))</screen>")
             }
         }
-        if !p.dictionary.isEmpty {
-            lines.append("User dictionary (always use these exact spellings when the speech sounds like them): " + p.dictionary.joined(separator: ", "))
+        if !p.dictionary.isEmpty || !p.replacements.isEmpty {
+            var parts: [String] = []
+            if !p.dictionary.isEmpty { parts.append(p.dictionary.joined(separator: ", ")) }
+            if !p.replacements.isEmpty {
+                let rep = p.replacements.sorted(by: { $0.key.count > $1.key.count }).prefix(30).map { "\($0.key) → \($0.value)" }.joined(separator: ", ")
+                parts.append("Known mis-hearings: " + rep)
+            }
+            lines.append("User dictionary (always use these exact spellings when the speech sounds like them): " + parts.joined(separator: "; "))
         }
         if !p.style.isEmpty {
             lines.append("The user's personal writing style (follow it for tone, punctuation and formatting; never let it change the meaning):\n\(p.style)")
@@ -257,8 +264,49 @@ enum Prompts {
         Ignore rewording, punctuation, formatting and ordinary everyday words. Use the exact spelling from EDITED. \
         Keep a name or term whole as it appears (e.g. a product called 招采saas is one term, not 招采 + saas), \
         and never list generic words on their own (saas, app, AI, API, 系统, 平台).
-        Reply with JSON: {"terms": ["..."]} — an empty list if nothing qualifies.
+        "wrong" must appear exactly in ORIGINAL; "right" must appear exactly in EDITED.
+        Reply with JSON: {"terms": [{"wrong": "<exact text from ORIGINAL>", "right": "<exact text from EDITED>"}]} — an empty list if nothing qualifies.
         """
+
+    /// Selects up to `limit` dictionary terms relevant to the current transcript and screen context,
+    /// preventing prompt bloat and keeping Whisper prompt within token limits.
+    static func relevantDictionary(_ dict: [String], raw: String, screen: String?, limit: Int) -> [String] {
+        guard !dict.isEmpty else { return [] }
+        var chosen: [String] = []
+        var seen = Set<String>()
+        let rawLower = raw.lowercased()
+        let screenLower = screen?.lowercased() ?? ""
+
+        for word in dict {
+            guard chosen.count < limit else { break }
+            let wLower = word.lowercased()
+            if (!rawLower.isEmpty && rawLower.contains(wLower)) || (!screenLower.isEmpty && screenLower.contains(wLower)) {
+                chosen.append(word)
+                seen.insert(word)
+                continue
+            }
+            if raw.count >= word.count && !raw.isEmpty {
+                for i in 0...(raw.count - word.count) {
+                    let start = raw.index(raw.startIndex, offsetBy: i)
+                    let end = raw.index(start, offsetBy: word.count)
+                    let sub = String(raw[start..<end])
+                    if EditWatcher.similarity(sub, word) >= 0.7 {
+                        chosen.append(word)
+                        seen.insert(word)
+                        break
+                    }
+                }
+            }
+        }
+        for word in dict {
+            guard chosen.count < limit else { break }
+            if !seen.contains(word) {
+                chosen.append(word)
+                seen.insert(word)
+            }
+        }
+        return chosen
+    }
 
     static let styleProfile = """
         You analyse how a user writes so a dictation editor can match their style. You get their recent dictated texts \

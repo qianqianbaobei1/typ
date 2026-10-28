@@ -310,7 +310,7 @@ final class EditWatcher {
     }
 
     /// 1 − normalized edit distance over characters.
-    static func similarity(_ a: String, _ b: String) -> Double {
+    nonisolated static func similarity(_ a: String, _ b: String) -> Double {
         let x = Array(a), y = Array(b)
         guard !x.isEmpty, !y.isEmpty else { return 0 }
         if x.count * y.count > 4_000_000 { return 0 }
