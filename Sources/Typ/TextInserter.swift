@@ -64,14 +64,28 @@ enum TextInserter {
         await paste(plain: text, html: nil, preserveClipboard: preserveClipboard)
     }
 
+    static func singleLine(_ s: String) -> String {
+        s.replacingOccurrences(of: #"\n+"#, with: " ", options: .regularExpression)
+         .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Smart text insertion with automatic fallback:
     /// For normal apps: uses zero-loss clipboard snapshot with HTML/PlainText dual injection and ⌘V.
-    /// For terminals and secure fields: automatically falls back to direct Unicode typing (aligns with Typeless findKeyCodeForCharacter).
+    /// For terminals: pastes single-line text to prevent newline auto-execution.
+    /// For password fields: types directly into field via typeUnicode on a single line.
     @MainActor
     static func insert(plain text: String, html: String?, context: AppContext?, preserveClipboard: Bool = true) async {
-        if let ctx = context, (ctx.isTerminalApp || ctx.isSecureField) {
-            typeUnicode(text)
-            return
+        if let ctx = context {
+            if ctx.isSecureField {
+                // Password fields: type it, on one line, never via the clipboard.
+                await typeUnicode(text.replacingOccurrences(of: "\n", with: " "))
+                return
+            }
+            if ctx.isTerminalApp {
+                // A newline in a terminal would run the command; keep dictation on one line.
+                await paste(plain: Self.singleLine(text), html: nil, preserveClipboard: preserveClipboard)
+                return
+            }
         }
         await paste(plain: text, html: html, preserveClipboard: preserveClipboard)
     }
@@ -117,22 +131,30 @@ enum TextInserter {
     }
 
     /// Posts raw Unicode string directly into focused application without touching the clipboard.
-    /// Aligns with official Typeless libInputHelper fallback for terminal / secure input / paste-restricted apps.
-    static func typeUnicode(_ text: String) {
+    /// Emits in grapheme cluster chunks with small pauses to prevent dropping characters or splitting surrogate pairs.
+    @MainActor
+    static func typeUnicode(_ text: String) async {
         let src = CGEventSource(stateID: .privateState)
-        for ch in text.utf16 {
-            var char = ch
-            if let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true) {
-                down.keyboardSetUnicodeString(stringLength: 1, unicodeString: &char)
-                down.setIntegerValueField(.eventSourceUserData, value: marker)
-                down.post(tap: .cghidEventTap)
+        var chunk: [UniChar] = []
+        func flush() {
+            guard !chunk.isEmpty else { return }
+            for down in [true, false] {
+                guard let e = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: down) else { continue }
+                e.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+                e.setIntegerValueField(.eventSourceUserData, value: marker)
+                e.post(tap: .cghidEventTap)
             }
-            if let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false) {
-                up.keyboardSetUnicodeString(stringLength: 1, unicodeString: &char)
-                up.setIntegerValueField(.eventSourceUserData, value: marker)
-                up.post(tap: .cghidEventTap)
-            }
+            chunk.removeAll(keepingCapacity: true)
         }
+        for ch in text {
+            let units = Array(String(ch).utf16)
+            if chunk.count + units.count > 20 {
+                flush()
+                try? await Task.sleep(nanoseconds: 4_000_000)
+            }
+            chunk.append(contentsOf: units)
+        }
+        flush()
     }
 
     /// Reads the whole content of the focused input box with ⌘A ⌘C, restores the clipboard,
